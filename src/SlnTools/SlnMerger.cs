@@ -213,7 +213,12 @@ public static class SlnMerger
             Console.WriteLine();
         }
 
-        XmlWriterSettings settings = new() { Indent = true, Encoding = Encoding.UTF8 };
+        XmlWriterSettings settings = new() 
+        { 
+            Indent = true
+            , Encoding = Encoding.UTF8 
+            , OmitXmlDeclaration = false
+        };
         Console.WriteLine($"Merging projects to {destinationSlnFilePath}");
         foreach (Project project in conf.Projects)
             if (project.ProjectXml != null)
@@ -240,11 +245,11 @@ public static class SlnMerger
                 XmlDocument newProj = new();
                 CopyProject(proj, project.ProjectXml, newProj);
 
-                StringBuilder sb = new();
-                using XmlWriter xmlWriter = XmlWriter.Create(sb, settings);
+                using MemoryStream ms = new ();
+                using XmlWriter xmlWriter = XmlWriter.Create(ms, settings);
                 newProj.WriteTo(xmlWriter);
                 xmlWriter.Flush();
-                File.WriteAllText(toProjFile, sb.ToString(), Encoding.UTF8);
+                File.WriteAllBytes(toProjFile, ms.ToArray());
             }
 
         Console.WriteLine();
