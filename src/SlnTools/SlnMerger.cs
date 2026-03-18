@@ -44,9 +44,9 @@ public static class SlnMerger
 
         Console.Write("Cleaning packages. ");
         foreach (Project project in result.Projects)
-        foreach (PackageReference package in project.PackageReferences.ToList())
-            if (result.Projects.Any(p => p.OriginalName == package.Name))
-                project.PackageReferences.Remove(package);
+            foreach (PackageReference package in project.PackageReferences.ToList())
+                if (result.Projects.Any(p => p.OriginalName == package.Name))
+                    project.PackageReferences.Remove(package);
         Console.WriteLine("Done");
 
         return result;
@@ -106,8 +106,10 @@ public static class SlnMerger
                             or "NestedProjects"
                             or "MonoDevelopProperties"
                             or "ExtensibilityGlobals" => false
-                        , "SolutionProperties" => true
-                        , _ => throw new NotImplementedException()
+                        ,
+                        "SolutionProperties" => true
+                        ,
+                        _ => throw new NotImplementedException()
                     };
 
                     foreach (string line in section.Lines)
@@ -237,9 +239,12 @@ public static class SlnMerger
                 WriteProjectConfiguration proj = new()
                 {
                     Project = project
-                    , ReplaceDic = fileToCopySourceDic
-                    , Destination = Path.GetDirectoryName(destinationSlnFilePath) ?? throw new NullReferenceException("No directory to sln path")
-                    , RelativePath = Path.GetRelativePath(toProjDir, project.AbsoluteOriginalDirectory)
+                    ,
+                    ReplaceDic = fileToCopySourceDic
+                    ,
+                    Destination = Path.GetDirectoryName(destinationSlnFilePath) ?? throw new NullReferenceException("No directory to sln path")
+                    ,
+                    RelativePath = Path.GetRelativePath(toProjDir, project.AbsoluteOriginalDirectory)
                 };
 
                 XmlDocument newProj = new();
@@ -261,10 +266,101 @@ public static class SlnMerger
         XmlDocument toDoc = to.OwnerDocument ?? (XmlDocument)to;
         if (from.Name == "Project")
         {
+            //XmlElement removeGroup = toDoc.CreateElement("ItemGroup");
+            //to.AppendChild(removeGroup);
+
+            //foreach (string itemType in new[] { "Compile", "EmbeddedResource", "None", "Content" })
+            //{
+            //    XmlElement xmlElement = toDoc.CreateElement(itemType);
+            //    removeGroup.AppendChild(xmlElement);
+
+            //    XmlAttribute removeAttr = toDoc.CreateAttribute(RemoveAttribute);
+            //    removeAttr.Value = "bin\\**;obj\\**";
+            //    xmlElement.Attributes!.Append(removeAttr);
+            //}
+
             // <Content Include="..\..\MyContentFiles\**\*.*"><Link>%(RecursiveDir)%(Filename)%(Extension)</Link></Content>
 
-            AddRecursiveReferences(proj, to, toDoc, "Compile", "cs");
-            AddRecursiveReferences(proj, to, toDoc, "Page", "xaml");
+            //AddRecursiveReferences(proj, to, toDoc, "Compile", "cs");
+            //AddRecursiveReferences(proj, to, toDoc, "Page", "xaml");
+            XmlElement group = toDoc.CreateElement("ItemGroup");
+            to.AppendChild(group);
+            XmlNode elt = toDoc.CreateElement("Compile");
+            group.AppendChild(elt);
+            XmlAttribute attr = toDoc.CreateAttribute(IncludeAttribute);
+            attr.Value = Path.Combine(proj.RelativePath, "**", "*.cs");
+            elt.Attributes!.Append(attr);
+            XmlNode link = toDoc.CreateElement("Link");
+            elt.AppendChild(link);
+            link.InnerText = "%(RecursiveDir)%(Filename)%(Extension)";
+
+            // --- Compile Remove bin/obj ---
+            foreach (string folder in new[] { "bin", "obj" })
+            {
+                elt = toDoc.CreateElement("Compile");
+                group.AppendChild(elt);
+                attr = toDoc.CreateAttribute(RemoveAttribute);
+                attr.Value = Path.Combine(proj.RelativePath, folder, "**", "*.cs");
+                elt.Attributes!.Append(attr);
+
+                elt = toDoc.CreateElement("Compile");
+                group.AppendChild(elt);
+                attr = toDoc.CreateAttribute(RemoveAttribute);
+                attr.Value = Path.Combine(folder, "**");
+                elt.Attributes!.Append(attr);
+
+                elt = toDoc.CreateElement(EmbeddedResource);
+                group.AppendChild(elt);
+                attr = toDoc.CreateAttribute(RemoveAttribute);
+                attr.Value = Path.Combine(folder, "**");
+                elt.Attributes!.Append(attr);
+            }
+
+            XmlElement noneGroup = toDoc.CreateElement("ItemGroup");
+            to.AppendChild(noneGroup);
+
+            foreach (string folder in new[] { "bin", "obj" })
+            {
+                XmlElement noneRemove = toDoc.CreateElement("None");
+                noneGroup.AppendChild(noneRemove);
+
+                XmlAttribute removeAttr = toDoc.CreateAttribute(RemoveAttribute);
+                removeAttr.Value = $"{folder}\\**";
+                noneRemove.Attributes!.Append(removeAttr);
+            }
+
+            // None Include **\*.* (hors .cs)
+            XmlElement noneInclude = toDoc.CreateElement("None");
+            noneGroup.AppendChild(noneInclude);
+
+            XmlAttribute includeAttr = toDoc.CreateAttribute(IncludeAttribute);
+            includeAttr.Value = Path.Combine(proj.RelativePath, "**", "*.*");
+            noneInclude.Attributes!.Append(includeAttr);
+
+            XmlAttribute excludeAttr = toDoc.CreateAttribute("Exclude");
+            excludeAttr.Value = "**\\*.cs;bin\\**;obj\\**";
+            noneInclude.Attributes!.Append(excludeAttr);
+
+            XmlElement noneLink = toDoc.CreateElement("Link");
+            noneLink.InnerText = "%(RecursiveDir)%(Filename)%(Extension)";
+            noneInclude.AppendChild(noneLink);
+
+            XmlElement copyToOutput = toDoc.CreateElement("CopyToOutputDirectory");
+            copyToOutput.InnerText = "PreserveNewest";
+            noneInclude.AppendChild(copyToOutput);
+
+            XmlElement vsRemoveGroup = toDoc.CreateElement("ItemGroup");
+            to.AppendChild(vsRemoveGroup);
+
+            foreach (string folder in new[] { "bin", "obj" })
+            {
+                XmlElement noneRemove = toDoc.CreateElement("None");
+                vsRemoveGroup.AppendChild(noneRemove);
+
+                XmlAttribute removeAttr = toDoc.CreateAttribute(RemoveAttribute);
+                removeAttr.Value = Path.Combine(proj.RelativePath, folder, "**");
+                noneRemove.Attributes!.Append(removeAttr);
+            }
         }
 
         foreach (XmlNode child in from.ChildNodes)
@@ -332,6 +428,17 @@ public static class SlnMerger
                 link.InnerText = includeValue;
                 copy.AppendChild(link);
             }
+        }
+    }
+
+    private static void AddLink(XmlElement element, XmlDocument toDoc, XmlNode copy)
+    {
+        XmlElement link = toDoc.CreateElement(Link);
+        string? includeValue = element.Attributes[IncludeAttribute]?.Value;
+        if (!string.IsNullOrEmpty(includeValue))
+        {
+            link.InnerText = includeValue;
+            copy.AppendChild(link);
         }
     }
 

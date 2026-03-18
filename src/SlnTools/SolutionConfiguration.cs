@@ -35,7 +35,9 @@ public class SolutionConfiguration
         {
             _VsVersionStr = value;
             if (!string.IsNullOrWhiteSpace(_VsVersionStr))
-                VsVersion = Version.Parse(_VsVersionStr);
+            {
+                //VsVersion = Version.Parse(_VsVersionStr);
+            }
         }
     }
 
